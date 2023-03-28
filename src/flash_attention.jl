@@ -135,7 +135,3 @@ function flash_attention(Q::CuArray{T,4}, K::CuArray{T,4}, V::CuArray{T,4}) wher
     @cuda threads = threads blocks = blocks shmem = shmem flash_attention_kernel(Q, K, V, O)
     return O
 end
-
-@inline function compute_shmem_size(d, Bs, T)
-    return (d * Bs * 3 + Bs * 3 + Bs * Bs * 2) * sizeof(T)
-end
