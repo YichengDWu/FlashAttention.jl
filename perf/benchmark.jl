@@ -27,9 +27,9 @@ function main()
     y_naive = Float64[]
 
     for seq_len in seq_lens
-        Q = CUDA.rand(Float32, d, seq_len, heads, batch)
-        K = CUDA.rand(Float32, d, seq_len, heads, batch)
-        V = CUDA.rand(Float32, d, seq_len, heads, batch)
+        Q = CUDA.rand(Float16, d, seq_len, heads, batch)
+        K = CUDA.rand(Float16, d, seq_len, heads, batch)
+        V = CUDA.rand(Float16, d, seq_len, heads, batch)
         t1 = @belapsed bench_flash_attn($Q, $K, $V)
         push!(y_flash, t1)
 
