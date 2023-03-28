@@ -26,7 +26,7 @@ function flash_attention_kernel(Q, K, V, O)
 
     # load Q to shared memory, note that this is done only once
     if idx <= NQ
-        for i in 1:d
+        for i = 1:d
             q[i, tx] = Q[i, idx, blockIdx().y, blockIdx().z]
         end
     end
@@ -36,22 +36,22 @@ function flash_attention_kernel(Q, K, V, O)
     mᵢ[tx] = -Inf
 
     # initialize o
-    for i in 1:d
+    for i = 1:d
         o[i, tx] = zero(T)
     end
 
     # the inner loop is serial
-    for j in 1:cld(NK, Bs)
+    for j = 1:cld(NK, Bs)
         # load K to shared memory
-        K_offset = (j-1) * Bs
+        K_offset = (j - 1) * Bs
         K_idx = K_offset + tx
 
         if K_idx <= NK
-            for m in 1:d
+            for m = 1:d
                 k[m, tx] = K[m, K_idx, blockIdx().y, blockIdx().z]
             end
         else
-            for m in 1:d
+            for m = 1:d
                 k[m, tx] = zero(T)
             end
         end
@@ -61,10 +61,10 @@ function flash_attention_kernel(Q, K, V, O)
         m̃ᵢⱼ = -Inf
 
         # compute s
-        for n in 1:Bs
+        for n = 1:Bs
             if K_offset + n <= NK && idx <= NQ
                 tmp = zero(T)
-                for m in 1:d
+                for m = 1:d
                     tmp += k[m, n] * q[m, tx]
                 end
                 s[n, tx] = tmp
@@ -75,38 +75,38 @@ function flash_attention_kernel(Q, K, V, O)
         end
 
         l̃ᵢⱼ = zero(T)
-        for n in 1:Bs
+        for n = 1:Bs
             tmp = exp(s[n, tx] - m̃ᵢⱼ)
             P̃ᵢⱼ[n, tx] = tmp
             l̃ᵢⱼ += tmp
         end
 
         mᵢⁿᵉʷ = max(mᵢ[tx], m̃ᵢⱼ)
-        lᵢⁿᵉʷ = exp(mᵢ[tx]-mᵢⁿᵉʷ) * lᵢ[tx] + exp(m̃ᵢⱼ-mᵢⁿᵉʷ)*l̃ᵢⱼ
+        lᵢⁿᵉʷ = exp(mᵢ[tx] - mᵢⁿᵉʷ) * lᵢ[tx] + exp(m̃ᵢⱼ - mᵢⁿᵉʷ) * l̃ᵢⱼ
 
         # Load V to shared memory, which is same as K
         if K_idx <= NK
-            for m in 1:d
+            for m = 1:d
                 k[m, tx] = V[m, K_idx, blockIdx().y, blockIdx().z]
             end
         else
-            for m in 1:d
+            for m = 1:d
                 k[m, tx] = zero(T)
             end
         end
 
         sync_threads()
 
-        w₁ = lᵢ[tx] * exp(mᵢ[tx]-mᵢⁿᵉʷ) / lᵢⁿᵉʷ
-        w₂ = exp(m̃ᵢⱼ-mᵢⁿᵉʷ) / lᵢⁿᵉʷ
+        w₁ = lᵢ[tx] * exp(mᵢ[tx] - mᵢⁿᵉʷ) / lᵢⁿᵉʷ
+        w₂ = exp(m̃ᵢⱼ - mᵢⁿᵉʷ) / lᵢⁿᵉʷ
 
         # compute V * P
-        for m in 1:d
+        for m = 1:d
             tmp = zero(T)
-            for n in 1:Bs
+            for n = 1:Bs
                 tmp += k[m, n] * P̃ᵢⱼ[n, tx]
             end
-            o[m, tx] = w₁ * o[m,tx] + w₂ * tmp
+            o[m, tx] = w₁ * o[m, tx] + w₂ * tmp
         end
 
         lᵢ[tx] = lᵢⁿᵉʷ
@@ -115,7 +115,7 @@ function flash_attention_kernel(Q, K, V, O)
 
     # write to O
     if idx <= NQ
-        for m in 1:d
+        for m = 1:d
             O[m, idx, blockIdx().y, blockIdx().z] = o[m, tx]
         end
     end
@@ -124,7 +124,7 @@ function flash_attention_kernel(Q, K, V, O)
 end
 
 
-function flash_attention(Q::CuArray{T,4},K::CuArray{T,4},V::CuArray{T,4}) where {T}
+function flash_attention(Q::CuArray{T,4}, K::CuArray{T,4}, V::CuArray{T,4}) where {T}
     O = similar(Q)
     d, N, H, B = size(Q)
 
@@ -132,7 +132,7 @@ function flash_attention(Q::CuArray{T,4},K::CuArray{T,4},V::CuArray{T,4}) where 
     threads = (Bs, 1, 1)
     blocks = (cld(N, Bs), H, B)
     shmem = compute_shmem_size(d, Bs, T)
-    @cuda threads=threads blocks=blocks shmem=shmem flash_attention_kernel(Q, K, V, O)
+    @cuda threads = threads blocks = blocks shmem = shmem flash_attention_kernel(Q, K, V, O)
     return O
 end
 
