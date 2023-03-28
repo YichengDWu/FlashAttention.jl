@@ -126,7 +126,7 @@ function flash_attention(Q::CuArray{T,4}, K::CuArray{T,4}, V::CuArray{T,4}) wher
     O = similar(Q)
     d, N, H, B = size(Q)
 
-    Bs = min(64, N) # block size
+    Bs = min(128, N) # block size
     threads = (Bs, 1, 1)
     blocks = (cld(N, Bs), H, B)
     shmem = compute_shmem_size(d, Bs, T)
