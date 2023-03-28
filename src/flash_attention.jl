@@ -40,8 +40,6 @@ function flash_attention_kernel(Q, K, V, O)
         o[i, tx] = zero(T)
     end
 
-    sync_threads()
-
     # the inner loop is serial
     for j in 1:cld(NK, Bs)
         # load K to shared memory
@@ -75,8 +73,6 @@ function flash_attention_kernel(Q, K, V, O)
             end
             m̃ᵢⱼ = max(m̃ᵢⱼ, s[n, tx])
         end
-
-        sync_threads()
 
         l̃ᵢⱼ = zero(T)
         for n in 1:Bs
@@ -115,7 +111,6 @@ function flash_attention_kernel(Q, K, V, O)
 
         lᵢ[tx] = lᵢⁿᵉʷ
         mᵢ[tx] = mᵢⁿᵉʷ
-        sync_threads()
     end
 
     # write to O
@@ -137,20 +132,10 @@ function flash_attention(Q::CuArray{T,4},K::CuArray{T,4},V::CuArray{T,4}) where 
     threads = (Bs, 1, 1)
     blocks = (cld(N, Bs), H, B)
     shmem = compute_shmem_size(d, Bs, T)
-    CUDA.@sync begin
-        @cuda threads=threads blocks=blocks shmem=shmem flash_attention_kernel(Q, K, V, O)
-    end
+    @cuda threads=threads blocks=blocks shmem=shmem flash_attention_kernel(Q, K, V, O)
     return O
 end
 
 @inline function compute_shmem_size(d, Bs, T)
     return (d * Bs * 3 + Bs * 3 + Bs * Bs * 2) * sizeof(T)
-end
-
-# sanity check
-function ref_attention(Q,K,V)
-    S = batched_mul(permutedims(K, (2,1,3,4)), Q)
-    P = softmax(S)
-    O = batched_mul(V, P)
-    return O
 end
