@@ -10,9 +10,10 @@ CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 julia = "1.9"
 
 [extras]
-Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 NNlib = "872c559c-99b0-510c-b3b7-b6c96a88d5cd"
 NNlibCUDA = "a00861dc-f156-4864-bf3c-e6376f28a68d"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+JLArrays = "27aeb0d3-9eb9-45fb-866b-73c2ecf80fcb"
 
 [targets]
-test = ["Test", "NNlib", "NNlibCUDA"]
+test = ["Test", "NNlib", "NNlibCUDA", "JLArrays"]
