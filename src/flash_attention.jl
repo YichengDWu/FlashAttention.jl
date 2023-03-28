@@ -20,8 +20,6 @@ function flash_attention_kernel(Q, K, V, O)
     offset += sizeof(mᵢ)
     s = CuDynamicSharedArray(T, (Bs, Bs), offset)
     offset += sizeof(s)
-    m̃ᵢⱼ = CuDynamicSharedArray(T, (1, Bs), offset)
-    offset += sizeof(m̃ᵢⱼ)
     P̃ᵢⱼ = CuDynamicSharedArray(T, (Bs, Bs), offset)
 
     # load Q to shared memory, note that this is done only once
