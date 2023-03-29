@@ -21,9 +21,9 @@ end
 
 function main()
     seq_lens = 1 .<< collect(7:10)
-    heads = 4
-    batch = 1
-    d = 4
+    heads = 64
+    batch = 8
+    d = 64
 
     y_flash = Float64[]
     y_naive = Float64[]

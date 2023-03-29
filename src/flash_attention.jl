@@ -118,12 +118,17 @@ end
 
 function flash_attention(Q::CuArray{T, 4}, K::CuArray{T, 4}, V::CuArray{T, 4}) where {T}
     O = similar(Q)
-    d, N, H, B = size(Q)
+    kernel = @cuda launch=false flash_attention_kernel(Q, K, V, O)
 
-    Bs = min(64, N) # block size
+    d, N, H, B = size(Q)
+    get_shmem(threads) = compute_shmem_size(d, threads, T)
+    config = launch_configuration(kernel.fun; shmem=get_shmem)
+
+    Bs = min(N, config.threads)
     threads = (Bs, 1, 1)
     blocks = (cld(N, Bs), H, B)
-    shmem = compute_shmem_size(d, Bs, T)
-    @cuda threads=threads blocks=blocks shmem=shmem flash_attention_kernel(Q, K, V, O)
+    shmem = get_shmem(Bs)
+
+    kernel(Q, K, V, O; threads=threads, blocks=blocks, shmem=shmem)
     return O
 end
