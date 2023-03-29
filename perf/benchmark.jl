@@ -8,6 +8,10 @@ function bench_flash_attn(Q, K, V)
     CUDA.@sync begin flash_attention(Q, K, V) end
 end
 
+function bench_naive_attn(Q, K, V)
+    CUDA.@sync begin ref_attention(Q, K, V) end
+end
+
 function ref_attention(Q, K, V)
     S = batched_mul(permutedims(K, (2, 1, 3, 4)), Q)
     P = softmax(S)
@@ -32,7 +36,7 @@ function main()
         push!(y_flash, t1)
 
         CUDA.reclaim()
-        t2 = @belapsed ref_attention($Q, $K, $V)
+        t2 = @belapsed bench_naive_attn($Q, $K, $V)
         push!(y_naive, t2)
     end
 
