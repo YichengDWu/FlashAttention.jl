@@ -12,7 +12,6 @@ function ref_attention(Q, K, V)
     return O
 end
 
-
 if CUDA.functional()
     @testset "FlashAttention.jl" begin
         Q = CUDA.cu(rand(3, 256, 4, 3))
