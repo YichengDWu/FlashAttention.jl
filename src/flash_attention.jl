@@ -14,13 +14,7 @@ function flash_attention_kernel(Q, K, V, O)
     offset += sizeof(o)
     k = CuDynamicSharedArray(T, (d, Bs), offset)
     offset += sizeof(k)
-    lᵢ = CuDynamicSharedArray(T, Bs, offset)
-    offset += sizeof(lᵢ)
-    mᵢ = CuDynamicSharedArray(T, Bs, offset)
-    offset += sizeof(mᵢ)
     s = CuDynamicSharedArray(T, (Bs, Bs), offset)
-    offset += sizeof(s)
-    P̃ᵢⱼ = CuDynamicSharedArray(T, (Bs, Bs), offset)
 
     # load Q to shared memory, note that this is done only once
     if idx <= NQ
@@ -30,8 +24,8 @@ function flash_attention_kernel(Q, K, V, O)
     end
 
     # initialize lᵢ and mᵢ
-    lᵢ[tx] = zero(T)
-    mᵢ[tx] = -Inf
+    lᵢ = zero(T)
+    mᵢ = -Inf
 
     # initialize o
     for i in 1:d
@@ -72,15 +66,16 @@ function flash_attention_kernel(Q, K, V, O)
             m̃ᵢⱼ = max(m̃ᵢⱼ, s[n, tx])
         end
 
+        # compute P̃ᵢⱼ and l̃ᵢⱼ
         l̃ᵢⱼ = zero(T)
         for n in 1:Bs
             tmp = exp(s[n, tx] - m̃ᵢⱼ)
-            P̃ᵢⱼ[n, tx] = tmp
+            s[n, tx] = tmp
             l̃ᵢⱼ += tmp
         end
 
-        mᵢⁿᵉʷ = max(mᵢ[tx], m̃ᵢⱼ)
-        lᵢⁿᵉʷ = exp(mᵢ[tx] - mᵢⁿᵉʷ) * lᵢ[tx] + exp(m̃ᵢⱼ - mᵢⁿᵉʷ) * l̃ᵢⱼ
+        mᵢⁿᵉʷ = max(mᵢ, m̃ᵢⱼ)
+        lᵢⁿᵉʷ = exp(mᵢ - mᵢⁿᵉʷ) * lᵢ + exp(m̃ᵢⱼ - mᵢⁿᵉʷ) * l̃ᵢⱼ
 
         # Load V to shared memory, which is same as K
         if K_idx <= NK
@@ -95,20 +90,20 @@ function flash_attention_kernel(Q, K, V, O)
 
         sync_threads()
 
-        w₁ = lᵢ[tx] * exp(mᵢ[tx] - mᵢⁿᵉʷ) / lᵢⁿᵉʷ
+        w₁ = lᵢ * exp(mᵢ - mᵢⁿᵉʷ) / lᵢⁿᵉʷ
         w₂ = exp(m̃ᵢⱼ - mᵢⁿᵉʷ) / lᵢⁿᵉʷ
 
         # compute V * P
         for m in 1:d
             tmp = zero(T)
             for n in 1:Bs
-                tmp += k[m, n] * P̃ᵢⱼ[n, tx]
+                tmp += k[m, n] * s[n, tx]
             end
             o[m, tx] = w₁ * o[m, tx] + w₂ * tmp
         end
 
-        lᵢ[tx] = lᵢⁿᵉʷ
-        mᵢ[tx] = mᵢⁿᵉʷ
+        lᵢ = lᵢⁿᵉʷ
+        mᵢ = mᵢⁿᵉʷ
     end
 
     # write to O
@@ -125,7 +120,7 @@ function flash_attention(Q::CuArray{T, 4}, K::CuArray{T, 4}, V::CuArray{T, 4}) w
     O = similar(Q)
     d, N, H, B = size(Q)
 
-    Bs = min(128, N) # block size
+    Bs = min(64, N) # block size
     threads = (Bs, 1, 1)
     blocks = (cld(N, Bs), H, B)
     shmem = compute_shmem_size(d, Bs, T)
