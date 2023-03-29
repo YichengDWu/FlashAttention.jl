@@ -38,8 +38,8 @@ function main()
         push!(y_naive, t2)
     end
 
-    plot(seq_lens, y_flash, label="FlashAttention")
-    plot!(seq_lens, y_naive, label="Naive")
+    plot(seq_lens, y_flash, label = "FlashAttention")
+    plot!(seq_lens, y_naive, label = "Naive")
     xlabel!("Sequence Length")
     ylabel!("Time (s)")
 end
