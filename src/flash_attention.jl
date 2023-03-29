@@ -7,19 +7,19 @@ function flash_attention_kernel(Q, K, V, O)
     idx = (blockIdx().x - 1) * Bs + tx
     T = eltype(Q)
 
-    offset = 0
-    q = CuDynamicSharedArray(T, (d, Bs), offset)
-    offset += sizeof(q)
-    o = CuDynamicSharedArray(T, (d, Bs), offset)
-    offset += sizeof(o)
-    k = CuDynamicSharedArray(T, (d, Bs), offset)
-    offset += sizeof(k)
-    s = CuDynamicSharedArray(T, (Bs, Bs), offset)
+    sram_offset = 0
+    q = CuDynamicSharedArray(T, (d, Bs), sram_offset)
+    sram_offset += sizeof(q)
+    o = CuDynamicSharedArray(T, (d, Bs), sram_offset)
+    sram_offset += sizeof(o)
+    k = CuDynamicSharedArray(T, (d, Bs), sram_offset)
+    sram_offset += sizeof(k)
+    s = CuDynamicSharedArray(T, (Bs, Bs), sram_offset)
 
     # load Q to shared memory, note that this is done only once
     if idx <= NQ
         for i in 1:d
-            q[i, tx] = Q[i, idx, blockIdx().y, blockIdx().z]
+            @inbounds q[i, tx] = Q[i, idx, blockIdx().y, blockIdx().z]
         end
     end
 
@@ -29,7 +29,7 @@ function flash_attention_kernel(Q, K, V, O)
 
     # initialize o
     for i in 1:d
-        o[i, tx] = zero(T)
+        @inbounds o[i, tx] = zero(T)
     end
 
     # the inner loop is serial
@@ -40,11 +40,11 @@ function flash_attention_kernel(Q, K, V, O)
 
         if K_idx <= NK
             for m in 1:d
-                k[m, tx] = K[m, K_idx, blockIdx().y, blockIdx().z]
+                @inbounds k[m, tx] = K[m, K_idx, blockIdx().y, blockIdx().z]
             end
         else
             for m in 1:d
-                k[m, tx] = zero(T)
+                @inbounds k[m, tx] = zero(T)
             end
         end
         sync_threads()
@@ -57,20 +57,20 @@ function flash_attention_kernel(Q, K, V, O)
             if K_offset + n <= NK && idx <= NQ
                 tmp = zero(T)
                 for m in 1:d
-                    tmp = CUDA.fma(k[m, n], q[m, tx], tmp)
+                    @inbounds tmp = CUDA.fma(k[m, n], q[m, tx], tmp)
                 end
-                s[n, tx] = tmp
+                @inbounds s[n, tx] = tmp
             else
-                s[n, tx] = -Inf
+                @inbounds s[n, tx] = -Inf
             end
-            m̃ᵢⱼ = max(m̃ᵢⱼ, s[n, tx])
+            @inbounds m̃ᵢⱼ = max(m̃ᵢⱼ, s[n, tx])
         end
 
         # compute P̃ᵢⱼ and l̃ᵢⱼ
         l̃ᵢⱼ = zero(T)
         for n in 1:Bs
-            tmp = exp(s[n, tx] - m̃ᵢⱼ)
-            s[n, tx] = tmp
+            @inbounds tmp = exp(s[n, tx] - m̃ᵢⱼ)
+            @inbounds s[n, tx] = tmp
             l̃ᵢⱼ += tmp
         end
 
@@ -80,11 +80,11 @@ function flash_attention_kernel(Q, K, V, O)
         # Load V to shared memory, which is same as K
         if K_idx <= NK
             for m in 1:d
-                k[m, tx] = V[m, K_idx, blockIdx().y, blockIdx().z]
+                @inbounds k[m, tx] = V[m, K_idx, blockIdx().y, blockIdx().z]
             end
         else
             for m in 1:d
-                k[m, tx] = zero(T)
+                @inbounds k[m, tx] = zero(T)
             end
         end
 
@@ -97,9 +97,9 @@ function flash_attention_kernel(Q, K, V, O)
         for m in 1:d
             tmp = zero(T)
             for n in 1:Bs
-                tmp = CUDA.fma(k[m, n], s[n, tx], tmp)
+                @inbounds tmp = CUDA.fma(k[m, n], s[n, tx], tmp)
             end
-            o[m, tx] = CUDA.fma(w₁, o[m, tx], w₂ * tmp)
+            @inbounds o[m, tx] = CUDA.fma(w₁, o[m, tx], w₂ * tmp)
         end
 
         lᵢ = lᵢⁿᵉʷ
@@ -109,7 +109,7 @@ function flash_attention_kernel(Q, K, V, O)
     # write to O
     if idx <= NQ
         for m in 1:d
-            O[m, idx, blockIdx().y, blockIdx().z] = o[m, tx]
+            @inbounds O[m, idx, blockIdx().y, blockIdx().z] = o[m, tx]
         end
     end
 
