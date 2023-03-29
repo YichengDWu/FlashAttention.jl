@@ -129,10 +129,6 @@ function flash_attention(Q::CuArray{T, 4}, K::CuArray{T, 4}, V::CuArray{T, 4}) w
     blocks = (cld(N, Bs), H, B)
     shmem = get_shmem(Bs)
 
-    if shmem > 49152
-        carveout = cld(shmem, 1024)
-        CUDA.cuFuncSetAttribute(kernel.fun, CUDA.CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT, carveout)
-    end
     kernel(Q, K, V, O; threads=threads, blocks=blocks, shmem=shmem)
     return O
 end
