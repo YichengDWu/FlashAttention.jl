@@ -5,9 +5,7 @@ using CUDA, BenchmarkTools, Plots
 using NNlib, NNlibCUDA
 
 function bench_flash_attn(Q, K, V)
-    CUDA.@sync begin
-        flash_attention(Q, K, V)
-    end
+    CUDA.@sync begin flash_attention(Q, K, V) end
 end
 
 function ref_attention(Q, K, V)
@@ -38,8 +36,8 @@ function main()
         push!(y_naive, t2)
     end
 
-    plot(seq_lens, y_flash, label = "FlashAttention")
-    plot!(seq_lens, y_naive, label = "Naive")
+    plot(seq_lens, y_flash; label="FlashAttention")
+    plot!(seq_lens, y_naive; label="Naive")
     xlabel!("Sequence Length")
-    ylabel!("Time (s)")
+    return ylabel!("Time (s)")
 end
