@@ -9,7 +9,7 @@ export flash_attention
 
 function __init__()
     cap = CUDA.capability(device())
-    @info "Detected GPU with compute capability $cap, setting max shared memory size..."
+    @info "Detected GPU with compute capability $cap, setting maximum shared memory size..."
 
     # leave 2 KB free
     if cap.major == 0x07
