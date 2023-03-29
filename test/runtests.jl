@@ -6,7 +6,11 @@ import CUDA
 
 # sanity check
 function ref_attention(Q, K, V)
-    S = batched_mul(permutedims(K, (2, 1, 3, 4)), Q)
+    sq, sk = size(Q), size(K)
+    Q = reshape(Q, sq[1], sq[2], sq[3] * sq[4])
+    K = reshape(K, sk[1], sk[2], sk[3] * sk[4])
+    S = CUBLAS.gemm_strided_batched('T', 'N', Q, K)
+    S = reshape(S, sk[2], sq[2], sq[3], sq[4])
     P = softmax(S)
     O = batched_mul(V, P)
     return O
