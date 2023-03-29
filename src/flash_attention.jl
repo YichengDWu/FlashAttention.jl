@@ -1,12 +1,11 @@
 function flash_attention_kernel(Q, K, V, O)
     NK = size(K, 2)
-    NQ = size(Q, 2)
-    d = size(Q, 1)
+    d, NQ, H, _ = size(Q)
     tx = threadIdx().x
     Bs = blockDim().x # assume Br == Bc
-    idx = (blockIdx().x - 1) * Bs + tx
-    T = eltype(Q)
+    col = (blockIdx().x - 1) * Bs + tx
 
+    T = eltype(Q)
     sram_offset = 0
     q = CuDynamicSharedArray(T, (d, Bs), sram_offset)
     sram_offset += sizeof(q)
@@ -16,12 +15,16 @@ function flash_attention_kernel(Q, K, V, O)
     sram_offset += sizeof(k)
     s = CuDynamicSharedArray(T, (Bs, Bs), sram_offset)
 
+    col_offset = d * Bs * (blockIdx().x - 1) #  here we reshape Q to (d * Bs, gridDim().x, H, _)
+    Q_offset = col_offset + d * Bs * gridDim().x * (blockIdx().y - 1) + d * Bs * gridDim().x * H * (blockIdx().z - 1)
     # load Q to shared memory, note that this is done only once
-    if idx <= NQ
-        for i in 1:d
-            @inbounds q[i, tx] = Q[i, idx, blockIdx().y, blockIdx().z]
+    for m in 0:d-1
+        idx = tx + m * Bs
+        if idx + col_offset <= d * NQ
+            @inbounds q[idx] = Q[idx + Q_offset]
         end
     end
+    sync_threads()
 
     # initialize lᵢ and mᵢ
     lᵢ = zero(T)
@@ -32,7 +35,7 @@ function flash_attention_kernel(Q, K, V, O)
         @inbounds o[i, tx] = zero(T)
     end
 
-    # the inner loop is serial
+    # the inner loop along seq_len_k is serial
     for j in 1:cld(NK, Bs)
         # load K to shared memory
         K_offset = (j - 1) * Bs
@@ -54,7 +57,7 @@ function flash_attention_kernel(Q, K, V, O)
 
         # compute s
         for n in 1:Bs
-            if K_offset + n <= NK && idx <= NQ
+            if K_offset + n <= NK && col <= NQ
                 tmp = zero(T)
                 for m in 1:d
                     @inbounds tmp = CUDA.fma(k[m, n], q[m, tx], tmp)
@@ -107,9 +110,9 @@ function flash_attention_kernel(Q, K, V, O)
     end
 
     # write to O
-    if idx <= NQ
+    if col <= NQ
         for m in 1:d
-            @inbounds O[m, idx, blockIdx().y, blockIdx().z] = o[m, tx]
+            @inbounds O[m, col, blockIdx().y, blockIdx().z] = o[m, tx]
         end
     end
 
