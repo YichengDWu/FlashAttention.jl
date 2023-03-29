@@ -2,7 +2,7 @@ using FlashAttention
 using Test
 using NNlib, NNlibCUDA
 
-import CUDA
+using CUDA
 
 # sanity check
 function ref_attention(Q, K, V)
