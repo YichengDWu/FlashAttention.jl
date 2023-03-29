@@ -57,7 +57,7 @@ function flash_attention_kernel(Q, K, V, O)
             if K_offset + n <= NK && idx <= NQ
                 tmp = zero(T)
                 for m in 1:d
-                    tmp += k[m, n] * q[m, tx]
+                    tmp = CUDA.fma(k[m, n], q[m, tx], tmp)
                 end
                 s[n, tx] = tmp
             else
@@ -75,7 +75,7 @@ function flash_attention_kernel(Q, K, V, O)
         end
 
         mᵢⁿᵉʷ = max(mᵢ, m̃ᵢⱼ)
-        lᵢⁿᵉʷ = exp(mᵢ - mᵢⁿᵉʷ) * lᵢ + exp(m̃ᵢⱼ - mᵢⁿᵉʷ) * l̃ᵢⱼ
+        lᵢⁿᵉʷ = CUDA.fma(exp(mᵢ - mᵢⁿᵉʷ), lᵢ, exp(m̃ᵢⱼ - mᵢⁿᵉʷ) * l̃ᵢⱼ)
 
         # Load V to shared memory, which is same as K
         if K_idx <= NK
@@ -97,9 +97,9 @@ function flash_attention_kernel(Q, K, V, O)
         for m in 1:d
             tmp = zero(T)
             for n in 1:Bs
-                tmp += k[m, n] * s[n, tx]
+                tmp = CUDA.fma(k[m, n], s[n, tx], tmp)
             end
-            o[m, tx] = w₁ * o[m, tx] + w₂ * tmp
+            o[m, tx] = CUDA.fma(w₁, o[m, tx], w₂ * tmp)
         end
 
         lᵢ = lᵢⁿᵉʷ
