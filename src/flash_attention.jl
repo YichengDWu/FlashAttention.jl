@@ -9,11 +9,11 @@ function flash_attention_kernel(Q, K, V, O)
     # acllocate shared memory
     T = eltype(Q)
     sram_offset = 0
-    q = CuDynamicSharedArray(T, (d, Bs), sram_offset)
+    q = CuDynamicSharedArray(T, (d+2, Bs), sram_offset) # add 2 rows to avoid bank conflicts
     sram_offset += sizeof(q)
-    o = CuDynamicSharedArray(T, (d, Bs), sram_offset)
+    o = CuDynamicSharedArray(T, (d+2, Bs), sram_offset) # add 2 rows to avoid bank conflicts
     sram_offset += sizeof(o)
-    k = CuDynamicSharedArray(T, (d, Bs), sram_offset)
+    k = CuDynamicSharedArray(T, (d+2, Bs), sram_offset) # add 2 rows to avoid bank conflicts
     sram_offset += sizeof(k)
     s = CuDynamicSharedArray(T, (Bs, Bs), sram_offset)
 
@@ -21,25 +21,20 @@ function flash_attention_kernel(Q, K, V, O)
     col_offset = d * Bs * (blockIdx().x - 1)
     Q_offset = col_offset + stride(Q, 3) * (blockIdx().y - 1) + stride(Q, 4) * (blockIdx().z - 1)
     # load Q to shared memory, note that this is done only once
-    idx = tx
     Q_max_idx = d * size(Q, 2) - col_offset
-    for _ in 1:d
-        if idx <= Q_max_idx
-            @inbounds q[idx] = Q[idx + Q_offset]
+    for m in 0:d-1
+        Q_idx = m * Bs + tx
+        q_idx = Q_idx + (Q_idx-1) ÷ d * 2
+        if Q_idx <= Q_max_idx
+            @inbounds q[q_idx] = Q[Q_idx + Q_offset]
         end
-        @inbounds o[idx] = zero(T) # initialize o to zero
-        idx += Bs
+        @inbounds o[q_idx] = zero(T) # initialize o to zero
     end
     sync_threads()
 
     # initialize lᵢ and mᵢ
     lᵢ = zero(T)
     mᵢ = -T(Inf)
-
-    # initialize o
-    for i in 1:d
-        @inbounds o[i, tx] = zero(T)
-    end
 
     # the inner loop is serial
     for j in 1:cld(NK, Bs)
@@ -48,15 +43,15 @@ function flash_attention_kernel(Q, K, V, O)
         row_offset = j_offset * d
         K_offset = row_offset + stride(K, 3) * (blockIdx().y - 1) + stride(K, 4) * (blockIdx().z - 1)
 
-        idx = tx
         K_max_idx = d * size(K, 2) - row_offset
-        for _ in 1:d
-            if idx <= K_max_idx
-                @inbounds k[idx] = K[idx + K_offset]
+        for m in 0:d-1
+            K_idx = m * Bs + tx
+            k_idx = K_idx + (K_idx-1) ÷ d * 2
+            if K_idx <= K_max_idx
+                @inbounds k[k_idx] = K[K_idx + K_offset]
             else
-                k[idx] = zero(T) # Do we need this?
+                @inbounds k[K_idx] = zero(T) # Do we need this?
             end
-            idx += Bs
         end
         sync_threads()
 
@@ -87,19 +82,18 @@ function flash_attention_kernel(Q, K, V, O)
             end
         end
 
-
         mᵢⁿᵉʷ = max(mᵢ, m̃ᵢⱼ)
         lᵢⁿᵉʷ = muladd(exp(mᵢ - mᵢⁿᵉʷ), lᵢ, exp(m̃ᵢⱼ - mᵢⁿᵉʷ) * l̃ᵢⱼ)
 
         # Load V to shared memory, which is same as K
-        idx = tx
-        for _ in 1:d
-            if idx <= K_max_idx
-                @inbounds k[idx] = V[idx + K_offset]
+        for m in 0:d-1
+            V_idx = m * Bs + tx
+            v_idx = V_idx + (V_idx-1) ÷ d * 2
+            if V_idx <= K_max_idx
+                @inbounds k[v_idx] = V[V_idx + K_offset]
             else
-                k[idx] = zero(T) # Do we need this?
+                @inbounds k[V_idx] = zero(T) # Do we need this?
             end
-            idx += Bs
         end
         sync_threads()
 
@@ -126,12 +120,12 @@ function flash_attention_kernel(Q, K, V, O)
     end
 
     # write to O
-    idx = tx
-    for _ in 1:d
-        if idx <= Q_max_idx
-            @inbounds O[idx + Q_offset] = o[idx]
+    for m in 0:d-1
+        O_idx = m * Bs + tx
+        o_idx = O_idx + (O_idx-1) ÷ d * 2
+        if O_idx <= Q_max_idx
+            @inbounds O[O_idx + Q_offset] = o[o_idx]
         end
-        idx += Bs
     end
     return nothing
 end
