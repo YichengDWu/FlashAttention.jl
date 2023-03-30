@@ -25,7 +25,7 @@ function flash_attention_kernel(Q, K, V, O)
 
     # initialize lᵢ and mᵢ
     lᵢ = zero(T)
-    mᵢ = -Inf16
+    mᵢ = -T(Inf)
 
     # initialize o
     for i in 1:d
@@ -50,7 +50,7 @@ function flash_attention_kernel(Q, K, V, O)
         sync_threads()
 
         # initialize m̃ᵢⱼ
-        m̃ᵢⱼ = -Inf16
+        m̃ᵢⱼ = -T(Inf)
 
         # compute s
         for n in 1:Bs
@@ -61,7 +61,7 @@ function flash_attention_kernel(Q, K, V, O)
                 end
                 @inbounds s[n, tx] = tmp
             else
-                @inbounds s[n, tx] = -Inf16
+                @inbounds s[n, tx] = -T(Inf)
             end
             @inbounds m̃ᵢⱼ = max(m̃ᵢⱼ, s[n, tx])
         end
