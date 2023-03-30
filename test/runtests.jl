@@ -4,19 +4,18 @@ using NNlib, NNlibCUDA
 
 using CUDA
 
-# sanity check
-function ref_attention(Q, K, V)
-    sq, sk = size(Q), size(K)
-    Q = reshape(Q, sq[1], sq[2], sq[3] * sq[4])
-    K = reshape(K, sk[1], sk[2], sk[3] * sk[4])
-    S = CUBLAS.gemm_strided_batched('T', 'N', K, Q)
-    S = reshape(S, sk[2], sq[2], sq[3], sq[4])
-    P = softmax(S)
-    O = batched_mul(V, P)
-    return O
-end
 
 if CUDA.functional()
+    function ref_attention(Q, K, V)
+        sq, sk = size(Q), size(K)
+        Q = reshape(Q, sq[1], sq[2], sq[3] * sq[4])
+        K = reshape(K, sk[1], sk[2], sk[3] * sk[4])
+        S = CUBLAS.gemm_strided_batched('T', 'N', K, Q)
+        S = reshape(S, sk[2], sq[2], sq[3], sq[4])
+        P = softmax(S)
+        O = batched_mul(V, P)
+        return O
+    end
     @testset "FlashAttention.jl" begin
         Q = CUDA.randn(Float16, 3, 255, 4, 3)
         K = CUDA.randn(Float16, 3, 255, 4, 3)
