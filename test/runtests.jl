@@ -24,5 +24,12 @@ if CUDA.functional()
         O = flash_attention(Q, K, V)
         O_ref = ref_attention(Q, K, V)
         @test O ≈ O_ref
+
+        Q = CUDA.rand(Float16, 64, 255, 4, 3)
+        K = CUDA.rand(Float16, 64, 255, 4, 3)
+        V = CUDA.rand(Float16, 64, 255, 4, 3)
+        O = flash_attention(Q, K, V)
+        O_ref = ref_attention(Q, K, V)
+        @test sum(abs, O .- O_ref)/length(Q) < 1f-3
     end
 end
