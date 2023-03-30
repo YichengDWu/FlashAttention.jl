@@ -2,8 +2,6 @@ module FlashAttention
 
 using CUDA
 
-CUDA.@device_override Base.exp2(x::Float32) = Float16(CUDA.exp2(Float32(x)))
-
 include("utils.jl")
 include("flash_attention.jl")
 
