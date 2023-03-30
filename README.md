@@ -6,3 +6,14 @@
 [![Coverage](https://codecov.io/gh/YichengDWu/FlashAttention.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/YichengDWu/FlashAttention.jl)
 
 This is a Julia implementation of the [Flash Attention algorithm](https://arxiv.org/pdf/2205.14135v2.pdf).
+
+## Usage
+```julia
+using FlashAttention
+
+Q = CUDA.randn(Float16, 64, 1024, 48, 3);
+K = CUDA.randn(Float16, 64, 1024, 48, 3);
+V = CUDA.randn(Float16, 64, 1024, 48, 3);
+
+flash_attention(Q,K,V)
+```
