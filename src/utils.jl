@@ -1,5 +1,5 @@
 @inline function compute_shmem_size(d, Bs, T)
-    return (d * Bs * 3 + Bs * Bs) * sizeof(T)
+    return ((d + 2) * Bs * 3 + Bs * Bs) * sizeof(T)
 end
 
 """
@@ -12,4 +12,13 @@ function setMaxShmem(shmem)
     return CUDA.cuFuncSetAttribute(kernel.fun,
                                    CUDA.CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
                                    shmem * 1024)
+end
+
+function _checkbounds(Q, K, V)
+    sQ, sK, sV = size(Q), size(K), size(V)
+    sK != sV && throw(DimensionMismatch("K and V must have the same shape"))
+    sQ[3:4] != sK[3:4] != sV[3:4] &&
+        throw(DimensionMismatch("Q, K and V must have the same batch size and head size"))
+    return sQ[1] != sK[2] != sV[2] &&
+           throw(DimensionMismatch("Q, K and V must have the same hidden dimension"))
 end
