@@ -1,9 +1,7 @@
 using FlashAttention
 using Test
 using NNlib, NNlibCUDA
-
 using CUDA
-
 
 if CUDA.functional()
     function ref_attention(Q, K, V)
