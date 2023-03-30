@@ -34,8 +34,10 @@ function flash_attention_kernel(Q, K, V, O)
 
     # initialize lᵢ and mᵢ
     lᵢ = zero(T)
-    mᵢ = -T(Inf)
+    mᵢ = -typemax(T)
 
+    unrolled_end_N = 4 * div(d, 4)
+    unrolled_end_Bs = 4 * div(Bs, 4)
     # the inner loop is serial
     for j in 1:cld(NK, Bs)
         # load K to shared memory
@@ -56,19 +58,26 @@ function flash_attention_kernel(Q, K, V, O)
         sync_threads()
 
         # initialize m̃ᵢⱼ
-        m̃ᵢⱼ = -T(Inf)
+        m̃ᵢⱼ = -typemax(T)
 
         # compute s
         for n in 1:Bs
             if j_offset + n <= NK && col <= NQ
                 tmp = zero(T)
-                for m in 1:d
+                for m in 1:4:unrolled_end_N
+                    @inbounds tmp = muladd(k[m, n], q[m, tx], tmp)
+                    @inbounds tmp = muladd(k[m+1, n], q[m+1, tx], tmp)
+                    @inbounds tmp = muladd(k[m+2, n], q[m+2, tx], tmp)
+                    @inbounds tmp = muladd(k[m+3, n], q[m+3, tx], tmp)
+                end
+
+                for m in unrolled_end_N+1:d
                     @inbounds tmp = muladd(k[m, n], q[m, tx], tmp)
                 end
                 @inbounds s[n, tx] = tmp
                 @inbounds m̃ᵢⱼ = max(m̃ᵢⱼ, s[n, tx])
             else
-                @inbounds s[n, tx] = -T(Inf)
+                @inbounds s[n, tx] = -typemax(T)
             end
         end
 
@@ -104,7 +113,15 @@ function flash_attention_kernel(Q, K, V, O)
         for m in 1:d
             if col <= NQ
                 tmp = zero(T)
-                for n in 1:Bs
+                for n in 1:4:unrolled_end_Bs
+                    if j_offset + n <= NK
+                        @inbounds tmp = muladd(k[m, n], s[n, tx], tmp)
+                        @inbounds tmp = muladd(k[m, n+1], s[n+1, tx], tmp)
+                        @inbounds tmp = muladd(k[m, n+2], s[n+2, tx], tmp)
+                        @inbounds tmp = muladd(k[m, n+3], s[n+3, tx], tmp)
+                    end
+                end
+                for n in unrolled_end_Bs+1:Bs
                     if j_offset + n <= NK
                         @inbounds tmp = muladd(k[m, n], s[n, tx], tmp)
                     end
