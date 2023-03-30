@@ -5,7 +5,7 @@ using CUDA
 include("utils.jl")
 include("flash_attention.jl")
 
-export flash_attention
+export flash_attention, setMaxShmem
 
 function __init__()
     cap = CUDA.capability(device())
