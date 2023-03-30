@@ -1,12 +1,13 @@
 function flash_attention_kernel(Q, K, V, O)
     NK = size(K, 2)
     NQ = size(Q, 2)
-    d = size(Q, 1)
+    d = size(K, 1)
     tx = threadIdx().x
     Bs = blockDim().x # assume Br == Bc
-    idx = (blockIdx().x - 1) * Bs + tx
-    T = eltype(Q)
+    col = (blockIdx().x - 1) * Bs + tx
 
+    # acllocate shared memory
+    T = eltype(Q)
     sram_offset = 0
     q = CuDynamicSharedArray(T, (d, Bs), sram_offset)
     sram_offset += sizeof(q)
@@ -16,12 +17,20 @@ function flash_attention_kernel(Q, K, V, O)
     sram_offset += sizeof(k)
     s = CuDynamicSharedArray(T, (Bs, Bs), sram_offset)
 
+    #  here we reshape Q to (d * Bs, gridDim().x, :, :)
+    col_offset = d * Bs * (blockIdx().x - 1)
+    Q_offset = col_offset + stride(Q, 3) * (blockIdx().y - 1) + stride(Q, 4) * (blockIdx().z - 1)
     # load Q to shared memory, note that this is done only once
-    if idx <= NQ
-        for i in 1:d
-            @inbounds q[i, tx] = Q[i, idx, blockIdx().y, blockIdx().z]
+    idx = tx
+    Q_max_idx = d * size(Q, 2) - col_offset
+    for _ in 1:d
+        if idx <= Q_max_idx
+            @inbounds q[idx] = Q[idx + Q_offset]
         end
+        @inbounds o[idx] = zero(T) # initialize o to zero
+        idx += Bs
     end
+    sync_threads()
 
     # initialize lᵢ and mᵢ
     lᵢ = zero(T)
@@ -35,17 +44,19 @@ function flash_attention_kernel(Q, K, V, O)
     # the inner loop is serial
     for j in 1:cld(NK, Bs)
         # load K to shared memory
-        K_offset = (j - 1) * Bs
-        K_idx = K_offset + tx
+        j_offset = (j - 1) * Bs
+        row_offset = j_offset * d
+        K_offset = row_offset + stride(K, 3) * (blockIdx().y - 1) + stride(K, 4) * (blockIdx().z - 1)
 
-        if K_idx <= NK
-            for m in 1:d
-                @inbounds k[m, tx] = K[m, K_idx, blockIdx().y, blockIdx().z]
+        idx = tx
+        K_max_idx = d * size(K, 2) - row_offset
+        for _ in 1:d
+            if idx <= K_max_idx
+                @inbounds k[idx] = K[idx + K_offset]
+            else
+                k[idx] = zero(T) # Do we need this?
             end
-        else
-            for m in 1:d
-                @inbounds k[m, tx] = zero(T)
-            end
+            idx += Bs
         end
         sync_threads()
 
@@ -54,65 +65,74 @@ function flash_attention_kernel(Q, K, V, O)
 
         # compute s
         for n in 1:Bs
-            if K_offset + n <= NK && idx <= NQ
+            if j_offset + n <= NK && col <= NQ
                 tmp = zero(T)
                 for m in 1:d
-                    @inbounds tmp = CUDA.fma(k[m, n], q[m, tx], tmp)
+                    @inbounds tmp = muladd(k[m, n], q[m, tx], tmp)
                 end
                 @inbounds s[n, tx] = tmp
+                @inbounds m̃ᵢⱼ = max(m̃ᵢⱼ, s[n, tx])
             else
                 @inbounds s[n, tx] = -T(Inf)
             end
-            @inbounds m̃ᵢⱼ = max(m̃ᵢⱼ, s[n, tx])
         end
 
         # compute P̃ᵢⱼ and l̃ᵢⱼ
         l̃ᵢⱼ = zero(T)
         for n in 1:Bs
-            @inbounds tmp = exp(s[n, tx] - m̃ᵢⱼ)
-            @inbounds s[n, tx] = tmp
-            l̃ᵢⱼ += tmp
+            if n + j_offset <= NK
+                @inbounds tmp = exp(s[n, tx] - m̃ᵢⱼ)
+                @inbounds s[n, tx] = tmp
+                l̃ᵢⱼ += tmp
+            end
         end
+
 
         mᵢⁿᵉʷ = max(mᵢ, m̃ᵢⱼ)
-        lᵢⁿᵉʷ = CUDA.fma(exp(mᵢ - mᵢⁿᵉʷ), lᵢ, exp(m̃ᵢⱼ - mᵢⁿᵉʷ) * l̃ᵢⱼ)
+        lᵢⁿᵉʷ = muladd(exp(mᵢ - mᵢⁿᵉʷ), lᵢ, exp(m̃ᵢⱼ - mᵢⁿᵉʷ) * l̃ᵢⱼ)
 
         # Load V to shared memory, which is same as K
-        if K_idx <= NK
-            for m in 1:d
-                @inbounds k[m, tx] = V[m, K_idx, blockIdx().y, blockIdx().z]
+        idx = tx
+        for _ in 1:d
+            if idx <= K_max_idx
+                @inbounds k[idx] = V[idx + K_offset]
+            else
+                k[idx] = zero(T) # Do we need this?
             end
-        else
-            for m in 1:d
-                @inbounds k[m, tx] = zero(T)
-            end
+            idx += Bs
         end
-
         sync_threads()
 
         w₁ = lᵢ * exp(mᵢ - mᵢⁿᵉʷ) / lᵢⁿᵉʷ
         w₂ = exp(m̃ᵢⱼ - mᵢⁿᵉʷ) / lᵢⁿᵉʷ
 
-        # compute V * P
+        # update o
         for m in 1:d
-            tmp = zero(T)
-            for n in 1:Bs
-                @inbounds tmp = CUDA.fma(k[m, n], s[n, tx], tmp)
+            if col <= NQ
+                tmp = zero(T)
+                for n in 1:Bs
+                    if j_offset + n <= NK
+                        @inbounds tmp = muladd(k[m, n], s[n, tx], tmp)
+                    end
+                end
+                @inbounds o[m, tx] = muladd(w₁, o[m, tx], w₂ * tmp)
             end
-            @inbounds o[m, tx] = CUDA.fma(w₁, o[m, tx], w₂ * tmp)
         end
 
         lᵢ = lᵢⁿᵉʷ
         mᵢ = mᵢⁿᵉʷ
+
+        sync_threads()
     end
 
     # write to O
-    if idx <= NQ
-        for m in 1:d
-            @inbounds O[m, idx, blockIdx().y, blockIdx().z] = o[m, tx]
+    idx = tx
+    for _ in 1:d
+        if idx <= Q_max_idx
+            @inbounds O[idx + Q_offset] = o[idx]
         end
+        idx += Bs
     end
-
     return nothing
 end
 
