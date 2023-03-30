@@ -24,7 +24,7 @@ function flash_attention_kernel(Q, K, V, O)
     Q_max_idx = d * size(Q, 2) - col_offset
     for m in 0:d-1
         Q_idx = m * Bs + tx
-        q_idx = Q_idx + (Q_idx-1) ÷ d * 2
+        q_idx = Q_idx + div(Q_idx-1, d) << 1
         if Q_idx <= Q_max_idx
             @inbounds q[q_idx] = Q[Q_idx + Q_offset]
         end
@@ -37,7 +37,6 @@ function flash_attention_kernel(Q, K, V, O)
     mᵢ = -typemax(T)
 
     unrolled_end_N = 4 * div(d, 4)
-    unrolled_end_Bs = 4 * div(Bs, 4)
     # the inner loop is serial
     for j in 1:cld(NK, Bs)
         # load K to shared memory
@@ -48,11 +47,9 @@ function flash_attention_kernel(Q, K, V, O)
         K_max_idx = d * size(K, 2) - row_offset
         for m in 0:d-1
             K_idx = m * Bs + tx
-            k_idx = K_idx + (K_idx-1) ÷ d * 2
+            k_idx = K_idx + div(K_idx-1,d) << 1
             if K_idx <= K_max_idx
                 @inbounds k[k_idx] = K[K_idx + K_offset]
-            else
-                @inbounds k[K_idx] = zero(T) # Do we need this?
             end
         end
         sync_threads()
@@ -97,7 +94,7 @@ function flash_attention_kernel(Q, K, V, O)
         # Load V to shared memory, which is same as K
         for m in 0:d-1
             V_idx = m * Bs + tx
-            v_idx = V_idx + (V_idx-1) ÷ d * 2
+            v_idx = V_idx + div(V_idx-1, d) << 1
             if V_idx <= K_max_idx
                 @inbounds k[v_idx] = V[V_idx + K_offset]
             else
@@ -113,18 +110,8 @@ function flash_attention_kernel(Q, K, V, O)
         for m in 1:d
             if col <= NQ
                 tmp = zero(T)
-                for n in 1:4:unrolled_end_Bs
-                    if j_offset + n <= NK
-                        @inbounds tmp = muladd(k[m, n], s[n, tx], tmp)
-                        @inbounds tmp = muladd(k[m, n+1], s[n+1, tx], tmp)
-                        @inbounds tmp = muladd(k[m, n+2], s[n+2, tx], tmp)
-                        @inbounds tmp = muladd(k[m, n+3], s[n+3, tx], tmp)
-                    end
-                end
-                for n in unrolled_end_Bs+1:Bs
-                    if j_offset + n <= NK
-                        @inbounds tmp = muladd(k[m, n], s[n, tx], tmp)
-                    end
+                for n in 1:Bs
+                    @inbounds tmp = muladd(k[m, n], s[n, tx], tmp)
                 end
                 @inbounds o[m, tx] = muladd(w₁, o[m, tx], w₂ * tmp)
             end
@@ -139,7 +126,7 @@ function flash_attention_kernel(Q, K, V, O)
     # write to O
     for m in 0:d-1
         O_idx = m * Bs + tx
-        o_idx = O_idx + (O_idx-1) ÷ d * 2
+        o_idx = O_idx + div(O_idx-1, d) << 1
         if O_idx <= Q_max_idx
             @inbounds O[O_idx + Q_offset] = o[o_idx]
         end
