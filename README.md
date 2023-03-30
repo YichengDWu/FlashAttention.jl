@@ -9,7 +9,7 @@ This is a Julia implementation of the [Flash Attention algorithm](https://arxiv.
 
 ## Usage
 ```julia
-using FlashAttention
+using FlashAttention, CUDA
 
 Q = CUDA.randn(Float16, 64, 1024, 48, 3);
 K = CUDA.randn(Float16, 64, 1024, 48, 3);
