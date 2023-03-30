@@ -98,7 +98,7 @@ function flash_attention_kernel(Q, K, V, O)
             if V_idx <= K_max_idx
                 @inbounds k[v_idx] = V[V_idx + K_offset]
             else
-                @inbounds k[V_idx] = zero(T) # Do we need this?
+                @inbounds k[V_idx] = zero(T)
             end
         end
         sync_threads()
@@ -135,6 +135,7 @@ function flash_attention_kernel(Q, K, V, O)
 end
 
 function flash_attention(Q::CuArray{T, 4}, K::CuArray{T, 4}, V::CuArray{T, 4}) where {T}
+    _checkbounds(Q, K, V)
     O = similar(Q)
     kernel = @cuda launch=false flash_attention_kernel(Q, K, V, O)
 
