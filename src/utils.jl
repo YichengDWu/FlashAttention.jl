@@ -17,6 +17,8 @@ end
 function _checkbounds(Q, K, V)
     sQ, sK, sV = size(Q), size(K), size(V)
     sK != sV && throw(DimensionMismatch("K and V must have the same shape"))
-    sQ[3:4] != sK[3:4] != sV[3:4] && throw(DimensionMismatch("Q, K and V must have the same batch size and head size"))
-    sQ[1] != sK[2] != sV[2] && throw(DimensionMismatch("Q, K and V must have the same hidden dimension"))
+    sQ[3:4] != sK[3:4] != sV[3:4] &&
+        throw(DimensionMismatch("Q, K and V must have the same batch size and head size"))
+    return sQ[1] != sK[2] != sV[2] &&
+           throw(DimensionMismatch("Q, K and V must have the same hidden dimension"))
 end
