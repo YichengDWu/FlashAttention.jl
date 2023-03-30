@@ -2,6 +2,8 @@ module FlashAttention
 
 using CUDA
 
+CUDA.@device_override Base.exp2(x::Float32) = Float16(CUDA.exp2(Float32(x)))
+
 include("utils.jl")
 include("flash_attention.jl")
 
@@ -9,7 +11,6 @@ export flash_attention, setMaxShmem
 
 function __init__()
     cap = CUDA.capability(device())
-    @info "Detected GPU with compute capability $cap, setting maximum shared memory size..."
 
     # leave 2 KB free
     if cap.major == 0x07
