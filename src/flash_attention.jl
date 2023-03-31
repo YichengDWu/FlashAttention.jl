@@ -145,7 +145,7 @@ function flash_attention(Q::CuArray{T, 4}, K::CuArray{T, 4}, V::CuArray{T, 4}) w
 
     d, N, H, B = size(Q)
     get_shmem(threads) = compute_shmem_size(d, threads, T)
-    config = launch_configuration(kernel.fun; shmem=get_shmem)
+    config = launch_configuration(kernel.fun; shmem=get_shmem, max_threads=256)
 
     Bs = min(N, config.threads)
     threads = (Bs, 1, 1)
