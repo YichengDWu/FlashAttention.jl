@@ -142,6 +142,9 @@ function flash_attention(Q::CuArray{T, 4}, K::CuArray{T, 4}, V::CuArray{T, 4}) w
     _checkbounds(Q, K, V)
     O = similar(Q)
     kernel = @cuda launch=false flash_attention_kernel(Q, K, V, O)
+    CUDA.cuFuncSetAttribute(kernel.fun,
+                                   CUDA.CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
+                                   )
 
     d, N, H, B = size(Q)
     get_shmem(threads) = compute_shmem_size(d, threads, T)
