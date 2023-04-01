@@ -16,9 +16,11 @@ function flash_attention_kernel(Q, K, V, O)
     s = CuDynamicSharedArray(T, (Bs, Bs), shmem_offset)
 
     # load Q to shared memory, note that this is done only once
-    Q_offset = d * Bs * (blockIdx().x - 1) + stride(Q, 3) * (blockIdx().y - 1) + stride(Q, 4) * (blockIdx().z - 1)
+    Q_offset = d * Bs * (blockIdx().x - 1) +
+               stride(Q, 3) * (blockIdx().y - 1) +
+               stride(Q, 4) * (blockIdx().z - 1)
     K_offset = stride(K, 3) * (blockIdx().y - 1) + stride(K, 4) * (blockIdx().z - 1)
-    for i in 0:d-1
+    for i in 0:(d - 1)
         idx = i * Bs + tx
         row = mod1(idx, d)
         col = div(idx - row, d) + 1
@@ -33,7 +35,7 @@ function flash_attention_kernel(Q, K, V, O)
     lᵢ = zero(T)
     mᵢ = -typemax(T)
 
-  # the inner loop is serial
+    # the inner loop is serial
     for _ in 1:cld(size(K, 2), Bs)
         # initialize m̃ᵢⱼ
         m̃ᵢⱼ = -typemax(T)
@@ -62,7 +64,7 @@ function flash_attention_kernel(Q, K, V, O)
         lᵢⁿᵉʷ = CUDA.fma(exp(mᵢ - mᵢⁿᵉʷ), lᵢ, exp(m̃ᵢⱼ - mᵢⁿᵉʷ) * l̃ᵢⱼ)
 
         # Load V to shared memory, which shares the same memory with k
-        for i in 0:d-1
+        for i in 0:(d - 1)
             idx = i * Bs + tx
             row = mod1(idx, d)
             col = div(idx - row, d) + 1
@@ -89,7 +91,7 @@ function flash_attention_kernel(Q, K, V, O)
         K_offset += Bs * d
 
         # update k
-        for i in 0:d-1
+        for i in 0:(d - 1)
             idx = i * Bs + tx
             @inbounds k[idx] = K[idx + K_offset]
         end
@@ -97,7 +99,7 @@ function flash_attention_kernel(Q, K, V, O)
     end
 
     # write to O
-    for i in 0:d-1
+    for i in 0:(d - 1)
         idx = i * Bs + tx
         row = mod1(idx, d)
         col = div(idx - row, d) + 1
