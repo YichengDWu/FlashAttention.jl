@@ -1,6 +1,5 @@
 function flash_attention_kernel(Q, K, V, O)
     NK = size(K, 2)
-    NQ = size(Q, 2)
     d = size(K, 1)
     tx = threadIdx().x
     Bs = blockDim().x # assume Br == Bc
@@ -16,7 +15,6 @@ function flash_attention_kernel(Q, K, V, O)
     k = CuDynamicSharedArray(T, (d, Bs), shmem_offset) # add 2 rows to avoid bank conflicts
     shmem_offset += sizeof(k)
     s = CuDynamicSharedArray(T, (Bs, Bs), shmem_offset)
-
     # load Q to shared memory, note that this is done only once
     # we are acutally computing V((Q^TK)^T), so we need to transpose Q
     # it is painful to do this since Q is column major
@@ -26,9 +24,9 @@ function flash_attention_kernel(Q, K, V, O)
         idx = i * Bs + tx
         row = mod1(idx, d)
         col = div(idx - row, d) + 1
-         q[col, row] = Q[idx + Q_offset]
-         o[idx] = zero(T)
-         k[idx] = K[idx + K_offset]
+        @inbounds q[col, row] = Q[idx + Q_offset]
+        @inbounds o[idx] = zero(T)
+        @inbounds k[idx] = K[idx + K_offset]
     end
 
     sync_threads()
@@ -37,10 +35,8 @@ function flash_attention_kernel(Q, K, V, O)
     lᵢ = zero(T)
     mᵢ = -typemax(T)
 
-    # the inner loop is serial
+  # the inner loop is serial
     for _ in 1:cld(NK, Bs)
-
-
         # initialize m̃ᵢⱼ
         m̃ᵢⱼ = -typemax(T)
 
@@ -48,10 +44,10 @@ function flash_attention_kernel(Q, K, V, O)
         for n in 1:Bs
             tmp = zero(T)
             for m in 1:Bs
-                 tmp = CUDA.fma(q[tx, m], k[m, n], tmp)
+                @inbounds tmp = CUDA.fma(q[tx, m], k[m, n], tmp)
             end
-             s[tx, n] = tmp
-             m̃ᵢⱼ = max(m̃ᵢⱼ, s[tx, n])
+            s[tx, n] = tmp
+            @inbounds m̃ᵢⱼ = max(m̃ᵢⱼ, s[tx, n])
         end
 
         sync_threads()
@@ -59,8 +55,8 @@ function flash_attention_kernel(Q, K, V, O)
         # compute P̃ᵢⱼ and l̃ᵢⱼ
         l̃ᵢⱼ = zero(T)
         for n in 1:Bs
-             tmp = exp(s[tx, n] - m̃ᵢⱼ)
-             s[tx, n] = tmp
+            @inbounds tmp = exp(s[tx, n] - m̃ᵢⱼ)
+            @inbounds s[tx, n] = tmp
             l̃ᵢⱼ += tmp
         end
 
@@ -72,7 +68,7 @@ function flash_attention_kernel(Q, K, V, O)
             idx = i * Bs + tx
             row = mod1(idx, d)
             col = div(idx - row, d) + 1
-             v[row, col] = V[idx + K_offset]
+            @inbounds k[row, col] = V[idx + K_offset]
         end
 
         sync_threads()
@@ -84,9 +80,9 @@ function flash_attention_kernel(Q, K, V, O)
         for m in 1:d
             tmp = zero(T)
             for n in 1:Bs
-                 tmp = CUDA.fma(s[tx, n], k[m, n], tmp) # k[m, n] * s[n, tx]
+                @inbounds tmp = CUDA.fma(s[tx, n], k[m, n], tmp) # k[m, n] * s[n, tx]
             end
-             o[tx, o] = CUDA.fma(w₁, o[tx, o], w₂ * tmp) #  w₁ * o[m, tx] + w₂ * tmp
+            @inbounds o[tx, m] = CUDA.fma(w₁, o[tx, m], w₂ * tmp) #  w₁ * o[m, tx] + w₂ * tmp
         end
 
         lᵢ = lᵢⁿᵉʷ
@@ -97,9 +93,8 @@ function flash_attention_kernel(Q, K, V, O)
         # update k
         for i in 0:d-1
             idx = i * Bs + tx
-             k[idx] = K[idx + K_offset]
+            @inbounds k[idx] = K[idx + K_offset]
         end
-
         sync_threads()
     end
 
@@ -108,15 +103,16 @@ function flash_attention_kernel(Q, K, V, O)
         idx = i * Bs + tx
         row = mod1(idx, d)
         col = div(idx - row, d) + 1
-         O[idx + Q_offset] = o[col, row]
+        @inbounds O[idx + Q_offset] = o[col, row]
     end
+
     return nothing
 end
 
 function flash_attention(Q::CuArray{T, 4}, K::CuArray{T, 4}, V::CuArray{T, 4}) where {T}
     _checkbounds(Q, K, V)
     O = similar(Q)
-    kernel = @cuda launch=false minthreads=32 flash_attention_kernel(Q, K, V, O)
+    kernel = @cuda launch=false flash_attention_kernel(Q, K, V, O)
 
     d, N, H, B = size(Q)
     get_shmem(threads) = compute_shmem_size(d, threads, T)
