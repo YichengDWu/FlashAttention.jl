@@ -22,3 +22,8 @@ function _checkbounds(Q, K, V)
     return sQ[1] != sK[2] != sV[2] &&
            throw(DimensionMismatch("Q, K and V must have the same hidden dimension"))
 end
+
+@inline function mod1_pow2(x, y)
+    r = x & (y - 1)
+    return ifelse(r == 0, y, r)
+end
