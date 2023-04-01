@@ -24,7 +24,7 @@ function flash_attention_kernel(Q, K, V, O)
     for i in 0:(d - 1)
         idx = i * Bs + tx
         row = mod1_pow2(idx, d)
-        col = (idx - row) >> d + 1
+        col = (idx - row) >> power + 1
         @inbounds q[col, row] = Q[idx + Q_offset]
         @inbounds o[idx] = zero(T)
         @inbounds k[idx] = K[idx + K_offset]
@@ -68,7 +68,7 @@ function flash_attention_kernel(Q, K, V, O)
         for i in 0:(d - 1)
             idx = i * Bs + tx
             row = mod1_pow2(idx, d)
-            col = (idx - row) >> d + 1
+            col = (idx - row) >> power + 1
             @inbounds k[row, col] = V[idx + K_offset]
         end
 
@@ -103,7 +103,7 @@ function flash_attention_kernel(Q, K, V, O)
     for i in 0:(d - 1)
         idx = i * Bs + tx
         row = mod1_pow2(idx, d)
-        col = (idx - row) >> d + 1
+        col = (idx - row) >> power + 1
         @inbounds O[idx + Q_offset] = o[col, row]
     end
 
