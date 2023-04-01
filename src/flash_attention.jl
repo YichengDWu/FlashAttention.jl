@@ -22,7 +22,7 @@ function flash_attention_kernel(Q, K, V, O)
     K_offset = stride(K, 3) * (blockIdx().y - 1) + stride(K, 4) * (blockIdx().z - 1)
     for i in 0:(d - 1)
         idx = i * Bs + tx
-        row = mod1(idx, d)
+        row = mod1_pow2(idx, d)
         col = div(idx - row, d) + 1
         @inbounds q[col, row] = Q[idx + Q_offset]
         @inbounds o[idx] = zero(T)
@@ -66,7 +66,7 @@ function flash_attention_kernel(Q, K, V, O)
         # Load V to shared memory, which shares the same memory with k
         for i in 0:(d - 1)
             idx = i * Bs + tx
-            row = mod1(idx, d)
+            row = mod1_pow2(idx, d)
             col = div(idx - row, d) + 1
             @inbounds k[row, col] = V[idx + K_offset]
         end
@@ -101,7 +101,7 @@ function flash_attention_kernel(Q, K, V, O)
     # write to O
     for i in 0:(d - 1)
         idx = i * Bs + tx
-        row = mod1(idx, d)
+        row = mod1_pow2(idx, d)
         col = div(idx - row, d) + 1
         @inbounds O[idx + Q_offset] = o[col, row]
     end
