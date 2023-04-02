@@ -1,5 +1,5 @@
-@inline function compute_shmem_size(d, Bs, T)
-    return (Bs * d * 3 + 4 * d + Bs * Bs) * sizeof(T)
+@inline function compute_shmem_size(d, Bs)
+    return (Bs * d * 3 + 4 * d + Bs * Bs) * sizeof(Float16)
 end
 
 """

@@ -10,9 +10,9 @@ function flash_attention_kernel(Q, K, V, O)
     shmem_offset = 0
     q = CuDynamicSharedArray(T, (Bs + 2, d), shmem_offset) # pad 2 rows to avoid bank conflicts
     shmem_offset += sizeof(q)
-    o = CuDynamicSharedArray(T, (Bs + 2, d), shmem_offset) # pad 2 rows to avoid bank conflicts
+    o = CuDynamicSharedArray(T, (Bs + 2, d), shmem_offset) # pad 2 row to avoid bank conflicts
     shmem_offset += sizeof(o)
-    k = CuDynamicSharedArray(T, (d, Bs), shmem_offset) # add 2 rows to avoid bank conflicts
+    k = CuDynamicSharedArray(T, (d, Bs), shmem_offset) # pad 2 rows to avoid bank conflicts
     shmem_offset += sizeof(k)
     s = CuDynamicSharedArray(T, (Bs, Bs), shmem_offset)
 
@@ -32,14 +32,14 @@ function flash_attention_kernel(Q, K, V, O)
 
     sync_threads()
 
-    # initialize lᵢ and mᵢ
-    lᵢ = zero(T)
+    # initialize lseᵢ and mᵢ
+    lseᵢ = -typemax(T)
     mᵢ = -typemax(T)
 
     # the inner loop is serial
     for _ in 1:cld(size(K, 2), Bs)
-        # initialize m̃ᵢⱼ
-        m̃ᵢⱼ = -typemax(T)
+        # initialize mᵢⱼ
+        mᵢⱼ = lseᵢ
 
         # compute s=Q^TK
         for n in 1:Bs
@@ -48,21 +48,18 @@ function flash_attention_kernel(Q, K, V, O)
                 @inbounds tmp = CUDA.fma(q[tx, m], k[m, n], tmp)
             end
             s[tx, n] = tmp
-            @inbounds m̃ᵢⱼ = max(m̃ᵢⱼ, s[tx, n])
+            @inbounds mᵢⱼ = max(mᵢⱼ, s[tx, n])
         end
 
         sync_threads()
 
-        # compute P̃ᵢⱼ and l̃ᵢⱼ
-        l̃ᵢⱼ = zero(T)
+        # compute P̃ᵢⱼ and lᵢⱼ
+        lᵢⱼ = zero(T)
         for n in 1:Bs
-            @inbounds tmp = exp(s[tx, n] - m̃ᵢⱼ)
+            @inbounds tmp = exp(s[tx, n] - mᵢⱼ)
             @inbounds s[tx, n] = tmp
-            l̃ᵢⱼ += tmp
+            lᵢⱼ += tmp
         end
-
-        mᵢⁿᵉʷ = max(mᵢ, m̃ᵢⱼ)
-        lᵢⁿᵉʷ = CUDA.fma(exp(mᵢ - mᵢⁿᵉʷ), lᵢ, exp(m̃ᵢⱼ - mᵢⁿᵉʷ) * l̃ᵢⱼ)
 
         # Load V to shared memory, which shares the same memory with k
         for i in 0:(d - 1)
@@ -74,20 +71,17 @@ function flash_attention_kernel(Q, K, V, O)
 
         sync_threads()
 
-        w₁ = lᵢ * exp(mᵢ - mᵢⁿᵉʷ) / lᵢⁿᵉʷ
-        w₂ = exp(m̃ᵢⱼ - mᵢⁿᵉʷ) / lᵢⁿᵉʷ
-
         # update o
         for m in 1:d
-            tmp = zero(T)
+            tmp = o[tx, m] * exp(mᵢ - mᵢⱼ)
             for n in 1:Bs
                 @inbounds tmp = CUDA.fma(s[tx, n], k[m, n], tmp) # k[m, n] * s[n, tx]
             end
-            @inbounds o[tx, m] = CUDA.fma(w₁, o[tx, m], w₂ * tmp) #  w₁ * o[m, tx] + w₂ * tmp
+            @inbounds o[tx, m] = tmp
         end
 
-        lᵢ = lᵢⁿᵉʷ
-        mᵢ = mᵢⁿᵉʷ
+        mᵢ = mᵢⱼ
+        lseᵢ = mᵢⱼ + log(exp(lseᵢ - mᵢⱼ) + lᵢⱼ)
 
         K_offset += Bs * d
 
@@ -98,6 +92,11 @@ function flash_attention_kernel(Q, K, V, O)
         end
         sync_threads()
     end
+
+    for m in 1:d
+        @inbounds o[tx, m] = o[tx, m] * exp(mᵢ - lseᵢ)
+    end
+    sync_threads()
 
     # write to O
     for i in 0:(d - 1)
@@ -115,7 +114,7 @@ function flash_attention(Q::CuArray{T, 4}, K::CuArray{T, 4}, V::CuArray{T, 4}) w
     O = similar(Q)
     kernel = @cuda launch=false flash_attention_kernel(Q, K, V, O)
     d, N, H, B = size(Q)
-    get_shmem(threads) = compute_shmem_size(d, threads, T)
+    get_shmem = Base.Fix1(compute_shmem_size, d)
     config = launch_configuration(kernel.fun; shmem=get_shmem, max_threads=256)
 
     Bs = min(N, config.threads)
