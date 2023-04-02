@@ -81,7 +81,7 @@ function flash_attention_kernel(Q, K, V, O)
         end
 
         mᵢ = mᵢⱼ
-        lseᵢ =  mᵢⱼ + log(exp(lseᵢ - mᵢⱼ) + lᵢⱼ)
+        lseᵢ = mᵢⱼ + log(exp(lseᵢ - mᵢⱼ) + lᵢⱼ)
 
         K_offset += Bs * d
 
