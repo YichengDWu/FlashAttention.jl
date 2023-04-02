@@ -17,3 +17,6 @@ V = CUDA.randn(Float16, 64, 1024, 48, 3);
 
 flash_attention(Q,K,V)
 ```
+## Profiling
+
+Please refer to the file `flash_attention.ncu-rep`. Note that our implemetation do **not** use tensor cores as in the C++ implmentation.
