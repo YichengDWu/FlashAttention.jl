@@ -125,3 +125,27 @@ function flash_attention(Q::CuArray{T, 4}, K::CuArray{T, 4}, V::CuArray{T, 4}) w
     kernel(Q, K, V, O; threads=threads, blocks=blocks, shmem=shmem)
     return O
 end
+
+
+function kernel(q,k,v)
+
+    warpId = (threadIdx().x - 1) >> 5 + 1
+    laneId = (threadIdx().x - 1) % 32 + 1
+
+    block_shape_q = (D=64, N=256,H=1)
+    warp_shape_q = (D=32, N=64,H=1)
+    thread_shape_q = (D=32, N=1,H=1)
+
+    block_tile_q = Tile(block_shape_q)
+    warp_tile_q = Tile(warp_shape_q)
+    thread_tile_q = Tile(thread_shape_q)
+
+    shmem_q = CuDynamicSharedArray(Float16, (64,256))
+    @unroll for warp_tile = parallellise(block_tile_q, warp_tile_q, warpId, 8)
+        @unroll for thread_tile = parallellise(warp_tile, Tile(conf.mem_cd_thread), laneId, 32)
+            x = Layout.load(conf.global_c_layout, c, translate_base(thread_tile, (M = block_i, N = block_j)))
+            x = transf_gl2sh_c(x, thread_tile)
+            Layout.store!(conf.shared_c_layout, shmem_c, x, thread_tile)
+        end
+    end
+end
