@@ -6,6 +6,7 @@ version = "1.0.0-DEV"
 [deps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 GemmKernels = "312cec97-f96c-4f55-a63d-8e567f91b59b"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 
 [compat]
 julia = "1.9"

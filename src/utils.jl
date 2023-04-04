@@ -23,7 +23,4 @@ function _checkbounds(Q, K, V)
            throw(DimensionMismatch("Q, K and V must have the same hidden dimension"))
 end
 
-@inline function mod1_pow2(x, y)
-    r = x & (y - 1)
-    return ifelse(r == 0, y, r)
-end
+@inline mod1_pow2(x, y) = (x - 1) & (y - 1) + 1
