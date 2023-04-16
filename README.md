@@ -23,3 +23,6 @@ Please refer to the file `flash_attention.ncu-rep`. This is not a fast implement
 1) we do **not** use tensor cores as in the C++ implmentation,
 2) CUDA.jl doese not support asynchronous copy from global memory to shared memory, and
 3) this kernel's theoretical occupancy (12.5%) is limited by the required amount of shared memory. In the official implementation, the intermediate matrix `S` is instead stored in the registers.
+
+## Future work
+I plan to implement it in the future using [CuTe.jl](https://github.com/YichengDWu/CuTe.jl) to achieve competitive performance.
