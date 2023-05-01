@@ -25,4 +25,4 @@ Please refer to the file `flash_attention.ncu-rep`. This is not a fast implement
 3) this kernel's theoretical occupancy (12.5%) is limited by the required amount of shared memory. In the official implementation, the intermediate matrix `S` is instead stored in the registers.
 
 ## Future work
-I plan to implement it in the future using [CuTe.jl](https://github.com/YichengDWu/CuTe.jl) to achieve competitive performance.
+I plan to implement it in the future using [MoYe.jl](https://github.com/YichengDWu/MoYe.jl) to achieve competitive performance.
