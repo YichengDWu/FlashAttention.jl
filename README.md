@@ -19,10 +19,10 @@ flash_attention(Q,K,V)
 ```
 ## Profiling
 
-Please refer to the file `flash_attention.ncu-rep`. This is not a fast implementation for 
+Please refer to the file `flash_attention.ncu-rep`. This is not the fastest implementation for 
 1) we do **not** use tensor cores as in the C++ implmentation,
-2) CUDA.jl doese not support asynchronous copy from global memory to shared memory, and
-3) this kernel's theoretical occupancy (12.5%) is limited by the required amount of shared memory. In the official implementation, the intermediate matrix `S` is instead stored in the registers.
+2) CUDA.jl doese not yet support asynchronous copy from global memory to shared memory, and
+3) this kernel's theoretical occupancy (12.5%) is limited by the required amount of shared memory.
 
 ## Future work
 I plan to implement it in the future using [MoYe.jl](https://github.com/YichengDWu/MoYe.jl) to achieve competitive performance.
